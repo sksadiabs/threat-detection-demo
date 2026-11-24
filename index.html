@@ -67,6 +67,16 @@
   .result .line { font: 13px ui-monospace, Menlo, Consolas, monospace; word-break: break-all; margin: 4px 0; }
   .result ul { margin: 4px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
   .empty { color: var(--muted); }
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag {
+    font-size: 12px; padding: 3px 8px; border-radius: 4px; text-decoration: none;
+    background: #2a1f3d; color: #c4b5fd; border: 1px solid #4c3a75;
+  }
+  .tag:hover { border-color: #c4b5fd; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  td a { color: #c4b5fd; }
   .note { color: var(--muted); font-size: 13px; }
   footer { color: var(--muted); font-size: 12px; margin-top: 30px; text-align: center; }
 </style>
@@ -147,6 +157,15 @@
   </div>
 
   <div class="panel">
+    <h2>MITRE ATT&amp;CK techniques seen</h2>
+    <p class="note" style="margin-top:0">
+      MITRE ATT&amp;CK is a public catalog of attacker techniques, like a field guide
+      that gives every attacker move an ID. Click an ID to read about it.
+    </p>
+    <div id="attack"><p class="empty">Run an analysis to see techniques.</p></div>
+  </div>
+
+  <div class="panel">
     <h2>AI summary</h2>
     <p class="note">
       Coming soon. The AI summary will explain the results in plain English. It needs a
@@ -164,41 +183,62 @@
 // Think of this as a security guard with a checklist. Each rule is one
 // item on the checklist. If a log line matches an item, it earns points.
 // ----------------------------------------------------------------------
+// Each rule also lists the MITRE ATT&CK technique(s) it points to:
+// [technique ID, technique name, tactic (the attacker's goal at that stage)]
 const RULES = [
   { name: "Failed login", pattern: /failed (password|login)/i, points: 3,
-    why: "Someone tried to sign in and got the password wrong" },
+    why: "Someone tried to sign in and got the password wrong",
+    attack: [["T1110", "Brute Force", "Credential Access"]] },
   { name: "Repeated attempts", pattern: /attempts?\s*[=:]?\s*([5-9]|\d{2,})/i, points: 2,
-    why: "Many tries in a short time, like someone guessing a lock's code" },
+    why: "Many tries in a short time, like someone guessing a lock's code",
+    attack: [["T1110.001", "Password Guessing", "Credential Access"]] },
   { name: "Admin account", pattern: /\b(root|admin|administrator)\b/i, points: 2,
-    why: "An attempt on a powerful account that can change everything" },
+    why: "An attempt on a powerful account that can change everything",
+    attack: [["T1078", "Valid Accounts", "Initial Access"]] },
   { name: "Unknown user", pattern: /invalid user/i, points: 2,
-    why: "Someone tried a username that doesn't exist" },
+    why: "Someone tried a username that doesn't exist",
+    attack: [["T1110", "Brute Force", "Credential Access"]] },
   { name: "SQL injection", pattern: /(\bor\b\s+1\s*=\s*1|union\s+select|;\s*drop\s+table)/i, points: 5,
-    why: "Text designed to trick a database into revealing its secrets" },
+    why: "Text designed to trick a database into revealing its secrets",
+    attack: [["T1190", "Exploit Public-Facing Application", "Initial Access"]] },
   { name: "Command injection", pattern: /(;|\||&&)\s*(cat|ls|whoami|id|wget|curl|nc)\b|\|\s*(sh|bash)\b/i, points: 5,
-    why: "Text that tries to sneak extra system commands into an input box" },
+    why: "Text that tries to sneak extra system commands into an input box",
+    attack: [["T1190", "Exploit Public-Facing Application", "Initial Access"],
+             ["T1059", "Command and Scripting Interpreter", "Execution"]] },
   { name: "Cross-site scripting", pattern: /<script|onerror\s*=|javascript:/i, points: 4,
-    why: "Code hidden in a web input that could run in other people's browsers" },
+    why: "Code hidden in a web input that could run in other people's browsers",
+    attack: [["T1189", "Drive-by Compromise", "Initial Access"]] },
   { name: "Path traversal", pattern: /\.\.\/|%2e%2e/i, points: 4,
-    why: "Trying to climb out of the allowed folder into system files" },
+    why: "Trying to climb out of the allowed folder into system files",
+    attack: [["T1190", "Exploit Public-Facing Application", "Initial Access"]] },
   { name: "Port scan", pattern: /(port scan|nmap|syn flood)/i, points: 4,
-    why: "Someone walking the building testing every door handle" },
+    why: "Someone walking the building testing every door handle",
+    attack: [["T1046", "Network Service Discovery", "Discovery"]] },
   { name: "Privilege escalation", pattern: /sudo su|chmod\s+777|added to (the )?sudoers|usermod .*sudo|setuid/i, points: 4,
-    why: "An attempt to gain more power than the account was given" },
+    why: "An attempt to gain more power than the account was given",
+    attack: [["T1548", "Abuse Elevation Control Mechanism", "Privilege Escalation"]] },
   { name: "Attacker tool", pattern: /(mimikatz|netcat|nc -e|powershell -enc)/i, points: 5,
-    why: "A tool attackers commonly use to break in or move around" },
+    why: "A tool attackers commonly use to break in or move around",
+    attack: [["T1003", "OS Credential Dumping", "Credential Access"],
+             ["T1059", "Command and Scripting Interpreter", "Execution"]] },
   { name: "New account created", pattern: /new user|useradd|account created/i, points: 2,
-    why: "A new account appeared, which attackers often create to return later" },
+    why: "A new account appeared, which attackers often create to return later",
+    attack: [["T1136", "Create Account", "Persistence"]] },
   { name: "Data upload site", pattern: /pastebin\.com|transfer\.sh|ngrok\.io/i, points: 4,
-    why: "Traffic to a site often used to move stolen data out" },
+    why: "Traffic to a site often used to move stolen data out",
+    attack: [["T1567", "Exfiltration Over Web Service", "Exfiltration"]] },
   { name: "Ransomware hint", pattern: /ransom|\.locked\b|files? (were )?encrypted/i, points: 6,
-    why: "Signs of software that locks files and demands payment" },
+    why: "Signs of software that locks files and demands payment",
+    attack: [["T1486", "Data Encrypted for Impact", "Impact"]] },
   { name: "Logs cleared", pattern: /log (was )?cleared|history -c|wevtutil\s+cl|auditd.*stopped/i, points: 5,
-    why: "Someone tried to erase their tracks" },
+    why: "Someone tried to erase their tracks",
+    attack: [["T1070", "Indicator Removal", "Defense Evasion"]] },
   { name: "Odd hours", pattern: /(?<![\d:])(0[0-4]|2[2-3]):\d{2}/, points: 1,
-    why: "Activity at an unusual hour, when most people are asleep" },
+    why: "Activity at an unusual hour, when most people are asleep",
+    attack: [] },
   { name: "Missing page", pattern: /\b404\b/i, points: 1,
-    why: "A missing page; many in a row can mean someone is searching for weak spots" },
+    why: "A missing page; many in a row can mean someone is searching for weak spots",
+    attack: [["T1595.003", "Wordlist Scanning", "Reconnaissance"]] },
 ];
 
 // A special rule that looks across ALL lines, not just one.
@@ -207,7 +247,13 @@ const FAILED_PATTERN = /failed (password|login)/i;
 const IP_RULE = {
   name: "Repeat failures from one IP", points: 3,
   why: "This address keeps failing to log in, which suggests password guessing across the whole batch",
+  attack: [["T1110.001", "Password Guessing", "Credential Access"]],
 };
+
+// Link to the official MITRE page, e.g. T1110.001 -> /techniques/T1110/001/
+function attackUrl(id) {
+  return "https://attack.mitre.org/techniques/" + id.replace(".", "/") + "/";
+}
 const ALL_RULE_NAMES = RULES.map(r => r.name).concat(IP_RULE.name);
 const LEVELS = ["OK", "LOW", "MEDIUM", "HIGH"];
 
@@ -244,18 +290,22 @@ function analyzeLogs(text, s) {
   // Step B: score each line.
   const counts = { OK: 0, LOW: 0, MEDIUM: 0, HIGH: 0 };
   const shown = [];
+  const techniqueTally = {};  // technique ID -> { id, name, tactic, lines }
   for (const line of lines) {
     let score = 0;
     const reasons = [];
+    const techniques = new Map();  // removes duplicates on one line
     for (const rule of RULES) {
       if (s.enabled.includes(rule.name) && rule.pattern.test(line)) {
         score += rule.points;
         reasons.push(`${rule.name}: ${rule.why}`);
+        rule.attack.forEach(t => techniques.set(t[0], t));
       }
     }
     if (s.enabled.includes(IP_RULE.name) && findIps(line).some(ip => riskyIps.includes(ip))) {
       score += IP_RULE.points;
       reasons.push(`${IP_RULE.name}: ${IP_RULE.why}`);
+      IP_RULE.attack.forEach(t => techniques.set(t[0], t));
     }
     const lower = line.toLowerCase();
     for (const word of s.watchWords) {
@@ -266,20 +316,37 @@ function analyzeLogs(text, s) {
     }
     const level = levelFor(score, s.mediumAt, s.highAt);
     counts[level]++;
+    const lineTechniques = [...techniques.values()];
+    for (const [id, name, tactic] of lineTechniques) {
+      if (!techniqueTally[id]) techniqueTally[id] = { id, name, tactic, lines: 0 };
+      techniqueTally[id].lines++;
+    }
     if (LEVELS.indexOf(level) >= LEVELS.indexOf(s.minLevel)) {
-      shown.push({ line, level, score, reasons });
+      shown.push({ line, level, score, reasons, techniques: lineTechniques });
     }
   }
-  return { total: lines.length, counts, shown };
+  const techniquesSeen = Object.values(techniqueTally).sort((a, b) => b.lines - a.lines);
+  return { total: lines.length, counts, shown, techniquesSeen };
 }
 
 function reportText(result) {
   const c = result.counts;
   let out = `Lines checked: ${result.total} | HIGH: ${c.HIGH} | MEDIUM: ${c.MEDIUM} | LOW: ${c.LOW} | OK: ${c.OK}\n\n`;
+  if (result.techniquesSeen.length) {
+    out += "MITRE ATT&CK techniques seen:\n";
+    for (const t of result.techniquesSeen) {
+      out += `  ${t.id} ${t.name} (${t.tactic}) - ${t.lines} line(s)\n`;
+    }
+    out += "\n";
+  }
   if (!result.shown.length) return out + "No lines to show with these settings.\n";
   for (const r of result.shown) {
     out += `[${r.level}] (score ${r.score})\n${r.line}\n    `;
-    out += (r.reasons.length ? r.reasons.join("\n    ") : "No warning signs found.") + "\n\n";
+    out += (r.reasons.length ? r.reasons.join("\n    ") : "No warning signs found.") + "\n";
+    if (r.techniques.length) {
+      out += "    ATT&CK: " + r.techniques.map(t => `${t[0]} ${t[1]}`).join(", ") + "\n";
+    }
+    out += "\n";
   }
   return out;
 }
@@ -338,6 +405,42 @@ if (typeof document !== "undefined") {
     };
   }
 
+  function attackLink(id, text, className) {
+    const a = document.createElement("a");
+    a.href = attackUrl(id);
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.textContent = text;
+    if (className) a.className = className;
+    return a;
+  }
+
+  function renderAttack(list) {
+    const box = $("attack");
+    box.innerHTML = "";
+    if (!list.length) {
+      box.innerHTML = '<p class="empty">No ATT&amp;CK techniques matched.</p>';
+      return;
+    }
+    const table = document.createElement("table");
+    table.innerHTML = "<thead><tr><th>ID</th><th>Technique</th><th>Tactic (attacker's goal)</th><th>Lines</th></tr></thead>";
+    const body = document.createElement("tbody");
+    for (const t of list) {
+      const row = document.createElement("tr");
+      const idCell = document.createElement("td");
+      idCell.append(attackLink(t.id, t.id));
+      for (const value of [t.name, t.tactic, String(t.lines)]) {
+        const cell = document.createElement("td");
+        cell.textContent = value;
+        row.append(cell);
+      }
+      row.prepend(idCell);
+      body.append(row);
+    }
+    table.append(body);
+    box.append(table);
+  }
+
   let lastReport = "";
   function analyze() {
     const text = $("logs").value;
@@ -345,6 +448,7 @@ if (typeof document !== "undefined") {
     summary.innerHTML = ""; results.innerHTML = "";
     if (!text.trim()) {
       results.innerHTML = '<p class="empty">Paste at least one log line first.</p>';
+      $("attack").innerHTML = '<p class="empty">Run an analysis to see techniques.</p>';
       lastReport = "";
       return;
     }
@@ -361,6 +465,8 @@ if (typeof document !== "undefined") {
       chip.textContent = `${lvl}: ${result.counts[lvl]}`;
       summary.append(chip);
     }
+
+    renderAttack(result.techniquesSeen);
 
     if (!result.shown.length) {
       results.innerHTML = '<p class="empty">No lines to show with these settings.</p>';
@@ -383,6 +489,12 @@ if (typeof document !== "undefined") {
         list.append(li);
       }
       card.append(head, line, list);
+      if (r.techniques.length) {
+        const tags = document.createElement("div");
+        tags.className = "tags";
+        for (const [id, name] of r.techniques) tags.append(attackLink(id, `${id} ${name}`, "tag"));
+        card.append(tags);
+      }
       results.append(card);
     }
   }
@@ -408,7 +520,7 @@ if (typeof document !== "undefined") {
   resetControls();
 }
 
-if (typeof module !== "undefined") module.exports = { analyzeLogs, parseList, reportText, ALL_RULE_NAMES, SAMPLE_LOGS };
+if (typeof module !== "undefined") module.exports = { attackUrl, analyzeLogs, parseList, reportText, ALL_RULE_NAMES, SAMPLE_LOGS };
 </script>
 </body>
 </html>
