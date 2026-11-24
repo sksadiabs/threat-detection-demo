@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Threat Detection Demo</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #1a2129; --border: #2c3642; --text: #e6edf3;
+    --muted: #8b98a5; --accent: #3b82f6;
+    --high: #ef4444; --medium: #f59e0b; --low: #3b82f6; --ok: #22c55e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+  main { max-width: 1000px; margin: 0 auto; padding: 32px 20px 60px; }
+  h1 { margin: 0 0 6px; font-size: 28px; }
+  .intro { color: var(--muted); margin: 0 0 24px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px; margin-bottom: 18px;
+  }
+  .panel h2 { margin: 0 0 12px; font-size: 16px; }
+  label { display: block; font-size: 14px; color: var(--muted); margin-bottom: 6px; }
+  textarea, input[type=text], select {
+    width: 100%; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 10px;
+    font: 13px/1.5 ui-monospace, Menlo, Consolas, monospace;
+  }
+  textarea { min-height: 180px; resize: vertical; }
+  .rules {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 6px 14px;
+  }
+  .rules label { display: flex; gap: 8px; align-items: center; color: var(--text); margin: 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .slider-row { display: flex; gap: 10px; align-items: center; }
+  .slider-row input { flex: 1; }
+  .slider-row output { min-width: 24px; text-align: right; font-weight: 600; }
+  .small-buttons { margin-top: 10px; display: flex; gap: 8px; }
+  .buttons { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+  button {
+    background: var(--panel); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 16px; font-size: 14px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  button.link { padding: 4px 10px; font-size: 12px; }
+  .summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .chip { padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; border: 1px solid; }
+  .chip.HIGH { color: var(--high); border-color: var(--high); }
+  .chip.MEDIUM { color: var(--medium); border-color: var(--medium); }
+  .chip.LOW { color: var(--low); border-color: var(--low); }
+  .chip.OK { color: var(--ok); border-color: var(--ok); }
+  .result {
+    border-left: 4px solid; background: var(--bg); border-radius: 6px;
+    padding: 10px 14px; margin-bottom: 10px;
+  }
+  .result.HIGH { border-color: var(--high); }
+  .result.MEDIUM { border-color: var(--medium); }
+  .result.LOW { border-color: var(--low); }
+  .result.OK { border-color: var(--ok); }
+  .result .head { font-weight: 700; font-size: 13px; }
+  .result .line { font: 13px ui-monospace, Menlo, Consolas, monospace; word-break: break-all; margin: 4px 0; }
+  .result ul { margin: 4px 0 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
+  .empty { color: var(--muted); }
+  .note { color: var(--muted); font-size: 13px; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 30px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>AI Threat Detection Demo</h1>
+  <p class="intro">
+    Paste computer log lines below. The detector checks each line like a security
+    guard checking visitor badges, then flags the suspicious ones. Everything runs
+    in your browser; no log data is sent anywhere.
+  </p>
+
+  <div class="panel">
+    <label for="logs">Log lines (one entry per line)</label>
+    <textarea id="logs" placeholder="Paste one log entry per line here..."></textarea>
+  </div>
+
+  <div class="panel">
+    <h2>Rule controls</h2>
+    <label>Rules to use (uncheck a rule to ignore it)</label>
+    <div class="rules" id="rules"></div>
+    <div class="small-buttons">
+      <button class="link" id="allOn">Select all</button>
+      <button class="link" id="allOff">Clear all</button>
+    </div>
+    <div class="grid" style="margin-top:16px">
+      <div>
+        <label for="mediumAt">Points needed for MEDIUM (lower = more sensitive)</label>
+        <div class="slider-row"><input type="range" id="mediumAt" min="1" max="10"><output id="mediumAtOut"></output></div>
+      </div>
+      <div>
+        <label for="highAt">Points needed for HIGH (lower = more sensitive)</label>
+        <div class="slider-row"><input type="range" id="highAt" min="2" max="20"><output id="highAtOut"></output></div>
+      </div>
+      <div>
+        <label for="ipLimit">Failed logins from one IP before flagging it</label>
+        <div class="slider-row"><input type="range" id="ipLimit" min="2" max="10"><output id="ipLimitOut"></output></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Your own settings</h2>
+    <div class="grid">
+      <div>
+        <label for="watch">Watchlist words to flag (comma-separated, e.g. payroll, backup)</label>
+        <input type="text" id="watch">
+      </div>
+      <div>
+        <label for="watchPoints">Points added for each watchlist word found</label>
+        <div class="slider-row"><input type="range" id="watchPoints" min="1" max="10"><output id="watchPointsOut"></output></div>
+      </div>
+      <div>
+        <label for="trusted">Trusted IP addresses to ignore (comma-separated, e.g. 198.51.100.20)</label>
+        <input type="text" id="trusted">
+      </div>
+      <div>
+        <label for="minLevel">Show lines at this level and above</label>
+        <select id="minLevel">
+          <option>OK</option><option>LOW</option><option>MEDIUM</option><option>HIGH</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="buttons">
+    <button id="sample">Load sample logs</button>
+    <button id="reset">Reset controls</button>
+    <button id="download">Download report (.txt)</button>
+    <button class="primary" id="analyze">Analyze</button>
+  </div>
+
+  <div class="panel">
+    <h2>Results</h2>
+    <div class="summary" id="summary"></div>
+    <div id="results"><p class="empty">Click "Load sample logs", then "Analyze".</p></div>
+  </div>
+
+  <div class="panel">
+    <h2>AI summary</h2>
+    <p class="note">
+      Coming soon. The AI summary will explain the results in plain English. It needs a
+      private API key, which can't be stored safely in a public web page, so it will be
+      added through a separate secure service.
+    </p>
+  </div>
+
+  <footer>Teaching demo. Real security tools read far more data and use much larger rule sets.</footer>
+</main>
+
+<script>
+// ----------------------------------------------------------------------
+// PART 1: Rule-based detector
+// Think of this as a security guard with a checklist. Each rule is one
+// item on the checklist. If a log line matches an item, it earns points.
+// ----------------------------------------------------------------------
+const RULES = [
+  { name: "Failed login", pattern: /failed (password|login)/i, points: 3,
+    why: "Someone tried to sign in and got the password wrong" },
+  { name: "Repeated attempts", pattern: /attempts?\s*[=:]?\s*([5-9]|\d{2,})/i, points: 2,
+    why: "Many tries in a short time, like someone guessing a lock's code" },
+  { name: "Admin account", pattern: /\b(root|admin|administrator)\b/i, points: 2,
+    why: "An attempt on a powerful account that can change everything" },
+  { name: "Unknown user", pattern: /invalid user/i, points: 2,
+    why: "Someone tried a username that doesn't exist" },
+  { name: "SQL injection", pattern: /(\bor\b\s+1\s*=\s*1|union\s+select|;\s*drop\s+table)/i, points: 5,
+    why: "Text designed to trick a database into revealing its secrets" },
+  { name: "Command injection", pattern: /(;|\||&&)\s*(cat|ls|whoami|id|wget|curl|nc)\b|\|\s*(sh|bash)\b/i, points: 5,
+    why: "Text that tries to sneak extra system commands into an input box" },
+  { name: "Cross-site scripting", pattern: /<script|onerror\s*=|javascript:/i, points: 4,
+    why: "Code hidden in a web input that could run in other people's browsers" },
+  { name: "Path traversal", pattern: /\.\.\/|%2e%2e/i, points: 4,
+    why: "Trying to climb out of the allowed folder into system files" },
+  { name: "Port scan", pattern: /(port scan|nmap|syn flood)/i, points: 4,
+    why: "Someone walking the building testing every door handle" },
+  { name: "Privilege escalation", pattern: /sudo su|chmod\s+777|added to (the )?sudoers|usermod .*sudo|setuid/i, points: 4,
+    why: "An attempt to gain more power than the account was given" },
+  { name: "Attacker tool", pattern: /(mimikatz|netcat|nc -e|powershell -enc)/i, points: 5,
+    why: "A tool attackers commonly use to break in or move around" },
+  { name: "New account created", pattern: /new user|useradd|account created/i, points: 2,
+    why: "A new account appeared, which attackers often create to return later" },
+  { name: "Data upload site", pattern: /pastebin\.com|transfer\.sh|ngrok\.io/i, points: 4,
+    why: "Traffic to a site often used to move stolen data out" },
+  { name: "Ransomware hint", pattern: /ransom|\.locked\b|files? (were )?encrypted/i, points: 6,
+    why: "Signs of software that locks files and demands payment" },
+  { name: "Logs cleared", pattern: /log (was )?cleared|history -c|wevtutil\s+cl|auditd.*stopped/i, points: 5,
+    why: "Someone tried to erase their tracks" },
+  { name: "Odd hours", pattern: /(?<![\d:])(0[0-4]|2[2-3]):\d{2}/, points: 1,
+    why: "Activity at an unusual hour, when most people are asleep" },
+  { name: "Missing page", pattern: /\b404\b/i, points: 1,
+    why: "A missing page; many in a row can mean someone is searching for weak spots" },
+];
+
+// A special rule that looks across ALL lines, not just one.
+const IP_PATTERN = /\b\d{1,3}(?:\.\d{1,3}){3}\b/g;
+const FAILED_PATTERN = /failed (password|login)/i;
+const IP_RULE = {
+  name: "Repeat failures from one IP", points: 3,
+  why: "This address keeps failing to log in, which suggests password guessing across the whole batch",
+};
+const ALL_RULE_NAMES = RULES.map(r => r.name).concat(IP_RULE.name);
+const LEVELS = ["OK", "LOW", "MEDIUM", "HIGH"];
+
+function levelFor(score, mediumAt, highAt) {
+  if (score >= highAt) return "HIGH";
+  if (score >= mediumAt) return "MEDIUM";
+  if (score > 0) return "LOW";
+  return "OK";
+}
+
+function parseList(text) {
+  return text.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+}
+
+function findIps(line) {
+  return line.match(IP_PATTERN) || [];
+}
+
+// settings: { enabled, mediumAt, highAt, ipLimit, minLevel, watchWords, watchPoints, trustedIps }
+function analyzeLogs(text, s) {
+  const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+
+  // Step A: count failed logins per IP address across all lines.
+  const failures = {};
+  for (const line of lines) {
+    if (FAILED_PATTERN.test(line)) {
+      for (const ip of findIps(line)) {
+        if (!s.trustedIps.includes(ip)) failures[ip] = (failures[ip] || 0) + 1;
+      }
+    }
+  }
+  const riskyIps = Object.keys(failures).filter(ip => failures[ip] >= s.ipLimit);
+
+  // Step B: score each line.
+  const counts = { OK: 0, LOW: 0, MEDIUM: 0, HIGH: 0 };
+  const shown = [];
+  for (const line of lines) {
+    let score = 0;
+    const reasons = [];
+    for (const rule of RULES) {
+      if (s.enabled.includes(rule.name) && rule.pattern.test(line)) {
+        score += rule.points;
+        reasons.push(`${rule.name}: ${rule.why}`);
+      }
+    }
+    if (s.enabled.includes(IP_RULE.name) && findIps(line).some(ip => riskyIps.includes(ip))) {
+      score += IP_RULE.points;
+      reasons.push(`${IP_RULE.name}: ${IP_RULE.why}`);
+    }
+    const lower = line.toLowerCase();
+    for (const word of s.watchWords) {
+      if (lower.includes(word)) {
+        score += s.watchPoints;
+        reasons.push(`Your watchlist word '${word}': you asked to flag this word`);
+      }
+    }
+    const level = levelFor(score, s.mediumAt, s.highAt);
+    counts[level]++;
+    if (LEVELS.indexOf(level) >= LEVELS.indexOf(s.minLevel)) {
+      shown.push({ line, level, score, reasons });
+    }
+  }
+  return { total: lines.length, counts, shown };
+}
+
+function reportText(result) {
+  const c = result.counts;
+  let out = `Lines checked: ${result.total} | HIGH: ${c.HIGH} | MEDIUM: ${c.MEDIUM} | LOW: ${c.LOW} | OK: ${c.OK}\n\n`;
+  if (!result.shown.length) return out + "No lines to show with these settings.\n";
+  for (const r of result.shown) {
+    out += `[${r.level}] (score ${r.score})\n${r.line}\n    `;
+    out += (r.reasons.length ? r.reasons.join("\n    ") : "No warning signs found.") + "\n\n";
+  }
+  return out;
+}
+
+// ----------------------------------------------------------------------
+// PART 2: The web page controls
+// ----------------------------------------------------------------------
+const SAMPLE_LOGS = `Jan 10 09:14:02 server sshd: Accepted password for user1 from 198.51.100.20
+Jan 10 02:11:45 server sshd: Failed password for root from 203.0.113.5 port 52244
+Jan 10 02:11:47 server sshd: Failed password for root from 203.0.113.5 port 52246 attempts=8
+Jan 10 02:11:50 server sshd: Failed password for admin from 203.0.113.5 port 52250
+Jan 10 02:12:01 web app: GET /search?q=' OR 1=1 --
+Jan 10 02:13:19 web app: GET /files?path=../../etc/passwd
+Jan 10 02:14:05 web app: GET /shop?item=5;cat /etc/passwd
+Jan 10 09:30:00 web app: GET /index.html 200
+Jan 10 10:02:44 server sudo: user1 : user NOT in sudoers ; sudo su`;
+
+const DEFAULTS = { mediumAt: 3, highAt: 6, ipLimit: 3, watchPoints: 4, watch: "", trusted: "", minLevel: "OK" };
+
+if (typeof document !== "undefined") {
+  const $ = id => document.getElementById(id);
+  const sliders = ["mediumAt", "highAt", "ipLimit", "watchPoints"];
+
+  // Build one checkbox per rule.
+  const rulesBox = $("rules");
+  for (const name of ALL_RULE_NAMES) {
+    const label = document.createElement("label");
+    const box = document.createElement("input");
+    box.type = "checkbox"; box.value = name; box.checked = true;
+    label.append(box, document.createTextNode(name));
+    rulesBox.append(label);
+  }
+  const ruleBoxes = () => [...rulesBox.querySelectorAll("input")];
+
+  function syncOutputs() {
+    for (const id of sliders) $(id + "Out").textContent = $(id).value;
+  }
+  function resetControls() {
+    for (const id of sliders) $(id).value = DEFAULTS[id];
+    $("watch").value = DEFAULTS.watch;
+    $("trusted").value = DEFAULTS.trusted;
+    $("minLevel").value = DEFAULTS.minLevel;
+    ruleBoxes().forEach(b => (b.checked = true));
+    syncOutputs();
+  }
+  function currentSettings() {
+    return {
+      enabled: ruleBoxes().filter(b => b.checked).map(b => b.value),
+      mediumAt: +$("mediumAt").value,
+      highAt: +$("highAt").value,
+      ipLimit: +$("ipLimit").value,
+      minLevel: $("minLevel").value,
+      watchWords: parseList($("watch").value),
+      watchPoints: +$("watchPoints").value,
+      trustedIps: parseList($("trusted").value),
+    };
+  }
+
+  let lastReport = "";
+  function analyze() {
+    const text = $("logs").value;
+    const summary = $("summary"), results = $("results");
+    summary.innerHTML = ""; results.innerHTML = "";
+    if (!text.trim()) {
+      results.innerHTML = '<p class="empty">Paste at least one log line first.</p>';
+      lastReport = "";
+      return;
+    }
+    const result = analyzeLogs(text, currentSettings());
+    lastReport = reportText(result);
+
+    const total = document.createElement("span");
+    total.className = "chip"; total.style.color = "var(--text)";
+    total.textContent = `Lines checked: ${result.total}`;
+    summary.append(total);
+    for (const lvl of ["HIGH", "MEDIUM", "LOW", "OK"]) {
+      const chip = document.createElement("span");
+      chip.className = "chip " + lvl;
+      chip.textContent = `${lvl}: ${result.counts[lvl]}`;
+      summary.append(chip);
+    }
+
+    if (!result.shown.length) {
+      results.innerHTML = '<p class="empty">No lines to show with these settings.</p>';
+      return;
+    }
+    // textContent is used for log text so pasted code can never run on the page.
+    for (const r of result.shown) {
+      const card = document.createElement("div");
+      card.className = "result " + r.level;
+      const head = document.createElement("div");
+      head.className = "head";
+      head.textContent = `${r.level} (score ${r.score})`;
+      const line = document.createElement("div");
+      line.className = "line";
+      line.textContent = r.line;
+      const list = document.createElement("ul");
+      for (const reason of (r.reasons.length ? r.reasons : ["No warning signs found."])) {
+        const li = document.createElement("li");
+        li.textContent = reason;
+        list.append(li);
+      }
+      card.append(head, line, list);
+      results.append(card);
+    }
+  }
+
+  function download() {
+    if (!lastReport) analyze();
+    if (!lastReport) return;
+    const blob = new Blob([lastReport], { type: "text/plain" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "threat_report.txt";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  sliders.forEach(id => $(id).addEventListener("input", syncOutputs));
+  $("allOn").onclick = () => ruleBoxes().forEach(b => (b.checked = true));
+  $("allOff").onclick = () => ruleBoxes().forEach(b => (b.checked = false));
+  $("sample").onclick = () => { $("logs").value = SAMPLE_LOGS; };
+  $("reset").onclick = resetControls;
+  $("analyze").onclick = analyze;
+  $("download").onclick = download;
+  resetControls();
+}
+
+if (typeof module !== "undefined") module.exports = { analyzeLogs, parseList, reportText, ALL_RULE_NAMES, SAMPLE_LOGS };
+</script>
+</body>
+</html>
