@@ -12,15 +12,27 @@
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
+    margin: 0; color: var(--text); min-height: 100vh;
+    background-color: #05080d;
+    /* glowing corners + a faint circuit-style grid */
+    background-image:
+      radial-gradient(circle at 15% 10%, rgba(0, 255, 170, 0.10), transparent 40%),
+      radial-gradient(circle at 85% 90%, rgba(59, 130, 246, 0.12), transparent 45%),
+      linear-gradient(rgba(0, 255, 170, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 255, 170, 0.05) 1px, transparent 1px);
+    background-size: auto, auto, 40px 40px, 40px 40px;
+    background-attachment: fixed;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     line-height: 1.5;
   }
-  main { max-width: 1000px; margin: 0 auto; padding: 32px 20px 60px; }
+  #matrix { position: fixed; inset: 0; z-index: -1; opacity: 0.18; pointer-events: none; }
+  h1 { color: #e6fff6; text-shadow: 0 0 12px rgba(0, 255, 170, 0.45); }
+  main { position: relative; max-width: 1000px; margin: 0 auto; padding: 32px 20px 60px; }
   h1 { margin: 0 0 6px; font-size: 28px; }
   .intro { color: var(--muted); margin: 0 0 24px; }
   .panel {
-    background: var(--panel); border: 1px solid var(--border);
+    background: rgba(17, 24, 33, 0.85); border: 1px solid rgba(0, 255, 170, 0.18);
+    box-shadow: 0 0 24px rgba(0, 255, 170, 0.05); backdrop-filter: blur(3px);
     border-radius: 10px; padding: 18px; margin-bottom: 18px;
   }
   .panel h2 { margin: 0 0 12px; font-size: 16px; }
@@ -82,6 +94,7 @@
 </style>
 </head>
 <body>
+<canvas id="matrix" aria-hidden="true"></canvas>
 <main>
   <h1>AI Threat Detection Demo</h1>
   <p class="intro">
@@ -518,6 +531,34 @@ if (typeof document !== "undefined") {
   $("analyze").onclick = analyze;
   $("download").onclick = download;
   resetControls();
+}
+
+// Background: slow falling hex characters, like data streaming past.
+// Skipped for visitors who ask their device for reduced motion.
+if (typeof document !== "undefined") {
+  const canvas = document.getElementById("matrix");
+  const ctx = canvas.getContext("2d");
+  const chars = "0123456789ABCDEF";
+  const size = 16;
+  let drops = [];
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    drops = Array.from({ length: Math.ceil(canvas.width / size) }, () => Math.random() * -50);
+  }
+  function draw() {
+    ctx.fillStyle = "rgba(5, 8, 13, 0.12)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#00ffaa";
+    ctx.font = size + "px monospace";
+    drops.forEach((y, i) => {
+      ctx.fillText(chars[Math.floor(Math.random() * chars.length)], i * size, y * size);
+      drops[i] = y * size > canvas.height && Math.random() > 0.975 ? 0 : y + 1;
+    });
+  }
+  resize();
+  window.addEventListener("resize", resize);
+  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) setInterval(draw, 70);
 }
 
 if (typeof module !== "undefined") module.exports = { attackUrl, analyzeLogs, parseList, reportText, ALL_RULE_NAMES, SAMPLE_LOGS };
